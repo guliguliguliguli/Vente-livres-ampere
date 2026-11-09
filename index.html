@@ -627,7 +627,8 @@ render();
   if (!ORDER || !ORDER.url) return;
   const box = document.getElementById('collecte');
   fetch(ORDER.url, { cache: 'no-store' }).then(r => r.json()).then(d => {
-    if (!d || !d.ok || d.compteur === false || !(d.bons > 0)) return;
+    if (!d || !d.ok || d.compteur === false) return;
+    if (!(d.bons > 0)) { box.innerHTML = '<span class="ico" aria-hidden="true">📚</span><span class="txt"><b>Soyez les premiers !</b> Chaque livre acheté finance la bibliothèque de l\'école : 15 % du prix sont reversés en bons d\'achat de livres.</span>'; box.hidden = false; return; }
     box.innerHTML = '<span class="ico" aria-hidden="true">📚</span><span class="big">' + euro(d.bons) + '</span><span class="txt">déjà collectés pour la bibliothèque de l\'école, grâce à ' + euro(d.total).replace(',00', '') + ' de livres achetés. Merci !</span>';
     box.hidden = false;
   }).catch(() => { /* hors ligne ou service indisponible : l'encart reste masqué */ });
