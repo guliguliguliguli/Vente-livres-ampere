@@ -215,7 +215,8 @@ section.shelf:nth-of-type(6n){--sc:#4C9A3C;--sb:#D6EBC8}
 .add{border-width:2px;box-shadow:0 2px 0 var(--accent)}
 footer{position:relative;background:var(--surface-2);border-top:0}
 .shelfart{display:block;width:100%;height:46px}
-.head{flex-wrap:wrap}.book h3{flex:1 1 7rem;min-width:0}.price{flex:none}
+.head{flex-wrap:nowrap}.head>div{flex:1 1 0;min-width:0}.price{flex:none;align-self:flex-start;margin-top:1px;min-width:5.2rem;text-align:center}
+@media (max-width:560px){.head{flex-direction:column;gap:6px}.head>div{flex:none;width:100%}.price{align-self:flex-start;min-width:0}}
 @media (prefers-reduced-motion:reduce){.chip:hover,.book:hover{transform:none}}
 </style>
 
