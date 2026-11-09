@@ -339,6 +339,7 @@ const LANGS = { fr: 'Français', en: 'English' };
 
 const norm = s => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const linkify = s => s.replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)])/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
 const sortKey = b => norm(b.title).replace(/^(le |la |les |l'|l’|un |une |des )/, '') + ' ' + norm(b.sub);
 const euro = n => n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
 const catIndex = c => Math.max(0, CATS.indexOf(c)) + 1;
@@ -548,7 +549,7 @@ function doneView() {
   return `<h2 id="dlgtitle">Merci, commande enregistrée</h2>
   <p>Numéro de commande : <b>${esc(d.numero)}</b> · Total à régler : <b>${euro(d.total)}</b></p>
   ${d.mail === 'envoyé' ? `<p>Un e-mail de confirmation vient d'être envoyé (pensez à regarder les courriers indésirables).</p>` : ''}
-  ${d.paiement ? `<p><b>Paiement</b></p><div class="pay">${esc(d.paiement)}</div>` : ''}
+  ${d.paiement ? `<p><b>Paiement</b></p><div class="pay">${linkify(esc(d.paiement))}</div>` : ''}
   <p>Indiquez toujours le numéro <b>${esc(d.numero)}</b> avec votre paiement.</p>
   <div class="btns"><button type="button" class="btn main" data-act="close">Fermer</button></div>`;
 }
