@@ -218,6 +218,7 @@ footer{position:relative;background:var(--surface-2);border-top:0}
 .head{flex-wrap:nowrap}.head>div{flex:1 1 0;min-width:0}.price{flex:none;align-self:flex-start;margin-top:1px;min-width:5.2rem;text-align:center}
 @media (max-width:560px){.head{flex-direction:column;gap:6px}.head>div{flex:none;width:100%}.price{align-self:flex-start;min-width:0}}
 @media (prefers-reduced-motion:reduce){.chip:hover,.book:hover{transform:none}}
+.sp{display:block;font-weight:400;color:#6b5a4a;font-size:.8rem;margin-top:2px}.sp b{color:#2f7a3e}
 </style>
 
 <header class="hero">
@@ -463,8 +464,18 @@ document.getElementById('q').addEventListener('input', e => { state.q = e.target
 let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(updateMore, 150); });
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(updateMore);
 /* ---------- Commande ---------- */
-const STAND = new URLSearchParams(location.search).get('stand') || '';
+const STAND = '';                                   // la saisie au stand se fait désormais sur la page vendeur (Apps Script)
 const MAXQ = 10;
+let STOCK = null;                                   // mode stand : exemplaires disponibles à emporter, par livre
+async function loadStock() {
+  if (!STAND || !ORDER || !ORDER.url) return;
+  try { const r = await fetch(ORDER.url + '?stock=' + encodeURIComponent(STAND)); const j = await r.json(); STOCK = j && j.ok ? j.dispo : null; } catch (e) { STOCK = null; }
+}
+function split(i, q, paye) {                        // répartition d'une ligne : à emporter / à commander
+  const d = (paye && STOCK) ? Math.max(0, Number(STOCK[i]) || 0) : 0;
+  const e = Math.min(q, d); return { e: e, c: q - e };
+}
+function needChild(paye) { return Object.keys(cart).some(i => split(i, cart[i], paye).c > 0); }
 const CLASSES = (ORDER && ORDER.classes) || [1, 2, 3, 4, 5, 6];
 const PAIEMENTS = ['Chèque', 'Wero', 'PayPal', 'Revolut', 'Virement'];
 const BYISBN = {}; BOOKS.forEach(b => { BYISBN[b.isbn] = b; });
@@ -509,7 +520,7 @@ function initOrder() {
   if (orderOn) {
     lead.hidden = false;
     lead.innerHTML = STAND
-      ? '<span class="standtag">MODE STAND</span> Commandes saisies pour les parents.'
+      ? '<span class="standtag">MODE STAND</span> Vente payée : le livre est emporté tant qu\'il y en a sur le stand ; le reste est commandé à la librairie et remis à l\'enfant.'
       : "<b>Commandez ici :</b> ajoutez les livres à votre commande, indiquez le prénom et la classe de votre enfant, puis réglez la commande. Les livres seront remis à l'enfant à l'école après la vente." + (ORDER.cloture ? ' Commandes ouvertes jusqu\'au ' + new Date(ORDER.cloture + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' }) + '.' : '');
   } else if (ORDER && ORDER.url && closed) {
     lead.hidden = false; lead.textContent = 'Les commandes en ligne sont closes.';
@@ -525,13 +536,19 @@ function showDlg() {
   else body.innerHTML = doneView();
   if (!dlg.open) dlg.showModal();
 }
+function standSplit(i) {
+  if (!STOCK) return '<small class="sp">stock inconnu : tout sera commandé</small>';
+  const x = split(i, cart[i], true);
+  return '<small class="sp">' + (x.e ? '<b>' + x.e + ' à emporter</b>' : '') + (x.e && x.c ? ' · ' : '') + (x.c ? x.c + ' à commander (remis à l\'enfant)' : '') + '</small>';
+}
 function cartView() {
   const ids = Object.keys(cart);
   if (!ids.length) return `<h2 id="dlgtitle">Ma commande</h2><p>Votre commande est vide.</p><div class="btns"><button type="button" class="btn" data-act="close">Voir les livres</button></div>`;
   return `<h2 id="dlgtitle">Ma commande${STAND ? ' <span class="standtag">STAND</span>' : ''}</h2>
-  <ul class="lines">${ids.map(i => { const b = BYISBN[i]; return `<li><span class="t">${esc(b.title)}</span><span class="amt">${euro(cents(b.price) * cart[i] / 100)}</span>
+  <ul class="lines">${ids.map(i => { const b = BYISBN[i]; return `<li><span class="t">${esc(b.title)}${STAND ? standSplit(i) : ''}</span><span class="amt">${euro(cents(b.price) * cart[i] / 100)}</span>
     <span class="step" role="group" aria-label="Quantité de ${esc(b.title)}"><button type="button" data-q="-1" data-i="${i}" aria-label="Retirer un exemplaire">−</button><span>${cart[i]}</span><button type="button" data-q="1" data-i="${i}" aria-label="Ajouter un exemplaire">+</button></span><span></span></li>`; }).join('')}</ul>
   <p class="total"><span>Total</span><span>${euro(cartTotal())}</span></p>
+  ${STAND ? '<p class="sp">Répartition si la commande est <b>payée sur place</b>. Non payée : tout est commandé.</p>' : ''}
   <div class="btns"><button type="button" class="btn" data-act="close">Continuer mes choix</button><button type="button" class="btn main" data-act="form">Valider ma commande</button></div>`;
 }
 function formView() {
@@ -546,10 +563,10 @@ function formView() {
       <div class="fld"><label for="f-tel">Téléphone (facultatif)</label><input id="f-tel" name="tel" type="tel" autocomplete="tel" value="${v('tel')}"></div>
     </div>
     <div class="two">
-      <div class="fld"><label for="f-ep">Prénom de l'enfant</label><input id="f-ep" name="enfantPrenom" value="${STAND ? '' : v('enfantPrenom')}" required></div>
-      <div class="fld"><label for="f-en">Nom de l'enfant</label><input id="f-en" name="enfantNom" value="${STAND ? '' : v('enfantNom')}" required></div>
+      <div class="fld"><label for="f-ep">Prénom de l'enfant${STAND ? ' (si livres à commander)' : ''}</label><input id="f-ep" name="enfantPrenom" value="${STAND ? '' : v('enfantPrenom')}" required></div>
+      <div class="fld"><label for="f-en">Nom de l'enfant${STAND ? ' (si livres à commander)' : ''}</label><input id="f-en" name="enfantNom" value="${STAND ? '' : v('enfantNom')}" required></div>
     </div>
-    <div class="fld"><label for="f-cl">Classe de l'enfant</label><select id="f-cl" name="classe" required><option value="">Choisir…</option>${CLASSES.map(c => `<option value="${c}"${!STAND && String(f.classe) === String(c) ? ' selected' : ''}>Classe ${c}</option>`).join('')}</select><small>Le numéro de la classe (1 à ${CLASSES.length}) figure sur les messages de l'école.</small></div>
+    <div class="fld"><label for="f-cl">Classe de l'enfant${STAND ? ' (si livres à commander)' : ''}</label><select id="f-cl" name="classe" required><option value="">Choisir…</option>${CLASSES.map(c => `<option value="${c}"${!STAND && String(f.classe) === String(c) ? ' selected' : ''}>Classe ${c}</option>`).join('')}</select><small>Le numéro de la classe (1 à ${CLASSES.length}) figure sur les messages de l'école.</small></div>
     ${STAND ? `<div class="fld"><label for="f-mode">Mode de paiement</label><select id="f-mode" name="mode"><option value="">Pas encore payé</option>${PAIEMENTS.map(m => `<option>${m}</option>`).join('')}</select></div>` : `<label class="chk"><input type="checkbox" name="consent" required><span>J'accepte que ces informations (nom, e-mail, enfant et classe) soient utilisées uniquement pour traiter cette commande et remettre les livres à l'enfant. Elles seront supprimées après la vente.</span></label>`}
     <p class="total"><span>Total à régler</span><span>${euro(cartTotal())}</span></p>
     <p class="err" id="formerr" role="alert" hidden></p>
@@ -559,10 +576,11 @@ function formView() {
 function doneView() {
   const d = doneInfo;
   return `<h2 id="dlgtitle">Merci, commande enregistrée</h2>
-  <p>Numéro de commande : <b>${esc(d.numero)}</b> · Total à régler : <b>${euro(d.total)}</b></p>
+  <p>Numéro de commande : <b>${esc(d.numero)}</b> · Total : <b>${euro(d.total)}</b></p>
+  ${d.stand ? `${d.emporte.length ? '<p><b>À remettre maintenant :</b> ' + d.emporte.map(x => x.n + ' × ' + esc(x.titre)).join(' ; ') + '</p>' : ''}${d.commande.length ? '<p><b>Commandés à la librairie (remis à l\'enfant à l\'école) :</b> ' + d.commande.map(x => x.n + ' × ' + esc(x.titre)).join(' ; ') + '</p>' : ''}` : ''}
   ${d.mail === 'envoyé' ? `<p>Un e-mail de confirmation vient d'être envoyé (pensez à regarder les courriers indésirables).</p>` : ''}
-  ${d.paiement ? `<p><b>Paiement</b></p><div class="pay">${linkify(esc(d.paiement))}</div>` : ''}
-  <p>Indiquez toujours le numéro <b>${esc(d.numero)}</b> avec votre paiement.</p>
+  ${d.paiement && !d.paye ? `<p><b>Paiement</b></p><div class="pay">${linkify(esc(d.paiement))}</div>` : ''}
+  ${d.paye ? '<p>Paiement enregistré.</p>' : `<p>Indiquez toujours le numéro <b>${esc(d.numero)}</b> avec votre paiement.</p>`}
   <div class="btns"><button type="button" class="btn main" data-act="close">Fermer</button></div>`;
 }
 function unsureView() {
@@ -594,7 +612,9 @@ async function submitOrder() {
   if (sending) return;
   const err = document.getElementById('formerr'), btn = document.getElementById('sendbtn');
   const p = collect();
-  const need = [[p.parent, 'votre nom'], [p.enfantPrenom, "le prénom de l'enfant"], [p.enfantNom, "le nom de l'enfant"], [p.classe, "la classe de l'enfant"]];
+  const needKid = !STAND || needChild(!!p.stand.paye);
+  const need = [[p.parent, 'votre nom']];
+  if (needKid) need.push([p.enfantPrenom, "le prénom de l'enfant"], [p.enfantNom, "le nom de l'enfant"], [p.classe, "la classe de l'enfant"]);
   if (!STAND) need.splice(1, 0, [/^\S+@\S+\.\S{2,}$/.test(p.email) ? 'x' : '', 'une adresse e-mail valide']);
   const miss = need.filter(([v]) => !v).map(([, l]) => l);
   if (miss.length) { err.hidden = false; err.textContent = 'Merci d\'indiquer : ' + miss.join(', ') + '.'; return; }
@@ -607,7 +627,8 @@ async function submitOrder() {
 async function finish(p) {
   const j = await send(p);
   if (j && j.ok) {
-    doneInfo = { numero: j.numero, total: j.total, paiement: j.paiement, mail: j.mail };
+    doneInfo = { numero: j.numero, total: j.total, paiement: j.paiement, mail: j.mail, emporte: j.emporte || [], commande: j.commande || [], stand: !!STAND, paye: !!(p.stand && p.stand.paye) };
+    loadStock();
     cart = {}; store.set('ampere-cart', cart); pendingRef = null; view = 'done';
     BOOKS.forEach(b => { const box = document.querySelector(`.buy[data-buy="${b.isbn}"]`); if (box) box.innerHTML = buyHtml(b); });
     refreshBar(); showDlg();
@@ -632,6 +653,7 @@ if (orderOn) {
   document.addEventListener('submit', e => { if (e.target.id === 'orderform') { e.preventDefault(); submitOrder(); } });
 }
 initOrder();
+loadStock();
 
 render();
 
