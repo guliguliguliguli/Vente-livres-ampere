@@ -344,10 +344,13 @@ const BOOKS = [{"isbn":"9781838741358","lang":"en","title":"The Lost Robot","sub
 const CATS = ["Émotions, amitié et vie quotidienne","Animaux et nature","Loups, dragons et créatures magiques","Pirates, chevaliers et aventures","Histoires drôles et farfelues","Contes et histoires du soir","Premières lectures, romans et BD","Art, culture et découvertes","Activités et coloriages","Les Lutins (petits livres à 6,50 €)","Apprendre l'anglais"];
 const TAGS = ["Noël","Aventure","Humour","Émotions","Amitié","Famille","Animaux","Licornes et dragons","Loups","Pirates et chevaliers","Contes","Monstres et sorcières","Nuit et sommeil","Voyage","Art et culture"];
 const ORDER = {"url":"https://script.google.com/macros/s/AKfycbzoXO3pD8zAtp0aIvVA81ROOOng3pmGkwaDAQzP_GyQW5R2Q8_IDVfnuFF-1SKQLap8/exec","cloture":"2026-11-22","classes":[1,2,3,4,5,6]};
-const state = { q: '', lang: 'all', age: null, cat: 'all', price: null, tags: new Set() };
+const state = { q: '', lang: new Set(), age: new Set(), cat: new Set(), price: new Set(), tags: new Set() };
 const PRICES = [['Moins de 8 €', 0, 8], ['8 à 12 €', 8, 12], ['12 à 16 €', 12, 16], ['Plus de 16 €', 16, 1e9]];
 const inBand = (b, i) => b.price != null && b.price >= PRICES[i][1] && b.price < PRICES[i][2];
 const AGES = [3, 4, 5, 6, 7];
+// Tranches d'âge (sans chevauchement, choix multiple possible) : 3 = « 3 ans et moins », 7 = « 7 ans et plus » ; âge inconnu = toujours affiché.
+const inAge = (b, a) => b.age == null || (a <= 3 ? b.age <= 3 : a >= 7 ? b.age >= 7 : b.age === a);
+const inBands = (b, set) => [...set].some(i => inBand(b, i));
 const LANGS = { fr: 'Français', en: 'English' };
 
 const norm = s => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -359,10 +362,10 @@ const catIndex = c => Math.max(0, CATS.indexOf(c)) + 1;
 BOOKS.forEach(b => { b._s = norm([b.title, b.sub, b.authors, b.publisher, b.tags.join(' '), b.desc].join(' ')); });
 
 function matches(b) {
-  if (state.lang !== 'all' && b.lang !== state.lang) return false;
-  if (state.age !== null && b.age != null && state.age < 7 && b.age > state.age) return false;
-  if (state.cat !== 'all' && b.cat !== state.cat) return false;
-  if (state.price !== null && !inBand(b, state.price)) return false;
+  if (state.lang.size && !state.lang.has(b.lang)) return false;
+  if (state.age.size && ![...state.age].some(a => inAge(b, a))) return false;
+  if (state.cat.size && !state.cat.has(b.cat)) return false;
+  if (state.price.size && !inBands(b, state.price)) return false;
   for (const t of state.tags) if (!b.tags.includes(t)) return false;
   const q = norm(state.q).trim();
   if (q && !q.split(/\s+/).every(w => b._s.includes(w))) return false;
@@ -395,23 +398,23 @@ function cardHtml(b) {
 }
 
 function renderChips() {
-  const pool = BOOKS.filter(b => state.lang === 'all' || b.lang === state.lang);
+  const pool = BOOKS.filter(b => !state.lang.size || state.lang.has(b.lang));
   const lc = {}; BOOKS.forEach(b => { lc[b.lang] = (lc[b.lang] || 0) + 1; });
   const langs = Object.keys(LANGS).filter(l => lc[l]);
-  document.getElementById('langrow').innerHTML = langs.length > 1 ? '<span class="row-label">Langue</span>' + [['all', 'Toutes', BOOKS.length]].concat(langs.map(l => [l, LANGS[l], lc[l]])).map(([v, l, n]) =>
-    `<button type="button" class="chip" data-lang="${esc(v)}" aria-pressed="${state.lang === v}">${esc(l)}<small>${n}</small></button>`).join('') : '';
+  document.getElementById('langrow').innerHTML = langs.length > 1 ? '<span class="row-label">Langue</span>' + [['all', 'Tous', BOOKS.length]].concat(langs.map(l => [l, LANGS[l], lc[l]])).map(([v, l, n]) =>
+    `<button type="button" class="chip" data-lang="${esc(v)}" aria-pressed="${v === 'all' ? !state.lang.size : state.lang.has(v)}">${esc(l)}<small>${n}</small></button>`).join('') : '';
   const agePool = pool;
-  document.getElementById('agerow').innerHTML = '<span class="row-label">Âge de l\'enfant</span>' + [[null, 'Tous âges', agePool.length]].concat(AGES.map(a => [a, a === 7 ? '7 ans et +' : a + ' ans', agePool.filter(b => b.age == null || a >= 7 || b.age <= a).length])).map(([v, l, n]) =>
-    `<button type="button" class="chip" data-age="${v === null ? 'all' : v}" aria-pressed="${state.age === v}">${esc(l)}<small>${n}</small></button>`).join('');
+  document.getElementById('agerow').innerHTML = '<span class="row-label">Âge de l\'enfant</span>' + [[null, 'Tous', agePool.length]].concat(AGES.map(a => [a, a >= 7 ? '7 ans et plus' : a <= 3 ? '3 ans et moins' : a + ' ans', agePool.filter(b => inAge(b, a)).length])).map(([v, l, n]) =>
+    `<button type="button" class="chip" data-age="${v === null ? 'all' : v}" aria-pressed="${v === null ? !state.age.size : state.age.has(v)}">${esc(l)}<small>${n}</small></button>`).join('');
   const counts = {}; pool.forEach(b => { counts[b.cat] = (counts[b.cat] || 0) + 1; });
   const cats = [['all', 'Tous', pool.length]].concat(CATS.filter(c => counts[c]).map(c => [c, c, counts[c]]));
   document.getElementById('cats').innerHTML = '<span class="row-label">Catégories</span>' + cats.map(([v, l, n]) =>
-    `<button type="button" class="chip" data-cat="${esc(v)}" aria-pressed="${state.cat === v}">${esc(l)}<small>${n}</small></button>`).join('');
-  const pp = state.cat === 'all' ? pool : pool.filter(b => b.cat === state.cat);
-  document.getElementById('pricerow').innerHTML = '<span class="row-label">Prix</span>' + [[null, 'Tous les prix', pp.filter(b => b.price != null).length]].concat(PRICES.map((p, i) => [i, p[0], pp.filter(b => inBand(b, i)).length])).filter(x => x[0] === null || x[2]).map(([v, l, n]) =>
-    `<button type="button" class="chip" data-price="${v === null ? 'all' : v}" aria-pressed="${state.price === v}">${esc(l)}<small>${n}</small></button>`).join('');
+    `<button type="button" class="chip" data-cat="${esc(v)}" aria-pressed="${v === 'all' ? !state.cat.size : state.cat.has(v)}">${esc(l)}<small>${n}</small></button>`).join('');
+  const pp = !state.cat.size ? pool : pool.filter(b => state.cat.has(b.cat));
+  document.getElementById('pricerow').innerHTML = '<span class="row-label">Prix</span>' + [[null, 'Tous', pp.filter(b => b.price != null).length]].concat(PRICES.map((p, i) => [i, p[0], pp.filter(b => inBand(b, i)).length])).filter(x => x[0] === null || x[2]).map(([v, l, n]) =>
+    `<button type="button" class="chip" data-price="${v === null ? 'all' : v}" aria-pressed="${v === null ? !state.price.size : state.price.has(v)}">${esc(l)}<small>${n}</small></button>`).join('');
   const tc = {}; pool.forEach(b => b.tags.forEach(t => { tc[t] = (tc[t] || 0) + 1; }));
-  document.getElementById('tagrow').innerHTML = '<span class="row-label">Thèmes</span>' + TAGS.filter(t => tc[t]).map(t =>
+  document.getElementById('tagrow').innerHTML = '<span class="row-label">Thèmes</span>' + `<button type="button" class="chip" data-tagall="1" aria-pressed="${!state.tags.size}">Tous<small>${pool.length}</small></button>` + TAGS.filter(t => tc[t]).map(t =>
     `<button type="button" class="chip${t === 'Noël' ? ' noel' : ''}" data-tagf="${esc(t)}" aria-pressed="${state.tags.has(t)}">${esc(t)}<small>${tc[t]}</small></button>`).join('');
 }
 
@@ -425,7 +428,7 @@ function render() {
     html += `<section class="shelf" aria-labelledby="h-${catIndex(c)}"><h2 id="h-${catIndex(c)}">${esc(c)}<small>${items.length} livre${items.length > 1 ? 's' : ''}</small></h2><div class="grid">${items.map(cardHtml).join('')}</div></section>`;
   }
   document.getElementById('shelves').innerHTML = html;
-  const filtered = state.q.trim() || state.lang !== 'all' || state.age !== null || state.cat !== 'all' || state.price !== null || state.tags.size;
+  const filtered = state.q.trim() || state.lang.size || state.age.size || state.cat.size || state.price.size || state.tags.size;
   document.getElementById('count').textContent = filtered ? `${list.length} livre${list.length > 1 ? 's' : ''} sur ${BOOKS.length}` : `${BOOKS.length} livres`;
   document.getElementById('reset').hidden = !filtered;
   document.getElementById('empty').hidden = list.length > 0;
@@ -441,14 +444,21 @@ function updateMore() {
   });
 }
 
-function resetAll() { state.q = ''; state.lang = 'all'; state.age = null; state.cat = 'all'; state.price = null; state.tags.clear(); document.getElementById('q').value = ''; render(); }
+function resetAll() { state.q = ''; state.lang.clear(); state.age.clear(); state.cat.clear(); state.price.clear(); state.tags.clear(); document.getElementById('q').value = ''; render(); }
 
 document.addEventListener('click', e => {
   const t = e.target.closest('button'); if (!t) return;
-  if (t.dataset.lang !== undefined) { state.lang = t.dataset.lang; state.cat = 'all'; render(); }
-  else if (t.dataset.age !== undefined) { state.age = t.dataset.age === 'all' ? null : Number(t.dataset.age); render(); }
-  else if (t.dataset.cat !== undefined) { state.cat = t.dataset.cat; render(); }
-  else if (t.dataset.price !== undefined) { state.price = t.dataset.price === 'all' ? null : Number(t.dataset.price); render(); }
+  const flip = (set, v) => { set.has(v) ? set.delete(v) : set.add(v); };   // choix multiple dans chaque filtre ; « Tous » vide le filtre
+  if (t.dataset.lang !== undefined) {
+    if (t.dataset.lang === 'all') state.lang.clear(); else flip(state.lang, t.dataset.lang);
+    const ok = new Set(BOOKS.filter(b => !state.lang.size || state.lang.has(b.lang)).map(b => b.cat));
+    [...state.cat].forEach(c => { if (!ok.has(c)) state.cat.delete(c); });
+    render();
+  }
+  else if (t.dataset.age !== undefined) { if (t.dataset.age === 'all') state.age.clear(); else flip(state.age, Number(t.dataset.age)); render(); }
+  else if (t.dataset.cat !== undefined) { if (t.dataset.cat === 'all') state.cat.clear(); else flip(state.cat, t.dataset.cat); render(); }
+  else if (t.dataset.price !== undefined) { if (t.dataset.price === 'all') state.price.clear(); else flip(state.price, Number(t.dataset.price)); render(); }
+  else if (t.dataset.tagall !== undefined) { state.tags.clear(); render(); }
   else if (t.dataset.tagf !== undefined || t.dataset.tag !== undefined) {
     const v = t.dataset.tagf !== undefined ? t.dataset.tagf : t.dataset.tag;
     state.tags.has(v) ? state.tags.delete(v) : state.tags.add(v); render();
